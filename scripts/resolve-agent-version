@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
-# Resolve the Semaphore agent version to install.
+# Resolve the Semaphore agent version (git tag) to build.
 #
 # Usage: resolve-agent-version [VERSION]
 #
-#   VERSION empty or "latest"  -> newest stable release (vX.Y.Z, no -rc/-beta suffix)
-#                                 that actually has downloadable assets
-#   VERSION anything else      -> echoed back unchanged (e.g. v2.4.0, v2.5.0-rc.1)
+#   VERSION empty or "latest"  -> newest tag by semver, pre-releases included
+#                                 (v2.5.0 > v2.5.0-rc.1 > v2.4.0)
+#   VERSION anything else      -> echoed back unchanged (must be an existing tag)
 #
-# "latest" is resolved from git tags (no GitHub API rate limit) and confirmed by
-# probing the release's checksum file, because a tag can exist before (or
-# without) a published release.
+# Tags come from git ls-remote (no GitHub API rate limit). Protocol v1 is forced
+# because it needs only an anonymous GET of info/refs; the v2 POST to
+# git-upload-pack gets a 401 from GitHub in some networks (e.g. docker build).
+# AGENT_TAGS, if set, replaces the remote listing (newline-separated) - tests.
 set -euo pipefail
 
 REPO="${AGENT_REPO:-https://github.com/semaphoreci/agent}"
@@ -20,22 +21,25 @@ if [ -n "$requested" ] && [ "$requested" != latest ]; then
   exit 0
 fi
 
-tags="$(git ls-remote --tags --refs "${REPO}.git" \
-  | sed 's|.*refs/tags/||' \
-  | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
-  | sort -rV)"
+if [ -n "${AGENT_TAGS+x}" ]; then
+  tags="$AGENT_TAGS"
+else
+  tags="$(GIT_TERMINAL_PROMPT=0 git -c protocol.version=1 ls-remote --tags --refs "${REPO}.git" \
+    | sed 's|.*refs/tags/||')"
+fi
 
-if [ -z "$tags" ]; then
-  echo "resolve-agent-version: no stable tags found at ${REPO}" >&2
+# Semver sort with pre-release ordering: `sort -V` alone would put v2.5.0-rc.1
+# after v2.5.0, so stable tags get a suffix that sorts above any pre-release id.
+latest="$(printf '%s\n' "$tags" \
+  | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$' \
+  | sed -E 's/^(v[0-9]+\.[0-9]+\.[0-9]+)$/\1-zzz/' \
+  | sort -V \
+  | tail -n1 \
+  | sed 's/-zzz$//' || true)"
+
+if [ -z "$latest" ]; then
+  echo "resolve-agent-version: no version tags found at ${REPO}" >&2
   exit 1
 fi
 
-for tag in $tags; do
-  if curl -sSLI -f -o /dev/null "${REPO}/releases/download/${tag}/agent_checksums.txt" 2>/dev/null; then
-    printf '%s\n' "$tag"
-    exit 0
-  fi
-done
-
-echo "resolve-agent-version: no stable tag with a published release found at ${REPO}" >&2
-exit 1
+printf '%s\n' "$latest"

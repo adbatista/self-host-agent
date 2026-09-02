@@ -12,8 +12,8 @@ cd "$ROOT"
 IMAGE="${IMAGE:-semaphore-agent:test}"
 # Default build installs "latest"; expect whatever the resolver says right now.
 EXPECTED_AGENT_VERSION="${EXPECTED_AGENT_VERSION:-$(scripts/resolve-agent-version latest)}"
-# An older stable release used to prove pinning works.
-PINNED_AGENT_VERSION="${PINNED_AGENT_VERSION:-v2.3.3}"
+# A tag that differs from latest, used to prove pinning works (pre-release on purpose).
+PINNED_AGENT_VERSION="${PINNED_AGENT_VERSION:-v2.5.0-rc.1}"
 
 pass=0
 fail=0
@@ -35,28 +35,36 @@ check "explicit version is returned unchanged" \
   bash -c "[ \"\$(scripts/resolve-agent-version v2.3.3)\" = v2.3.3 ]"
 check "pre-release tag is accepted when named explicitly" \
   bash -c "[ \"\$(scripts/resolve-agent-version v2.5.0-rc.1)\" = v2.5.0-rc.1 ]"
-check "'latest' resolves to a stable vX.Y.Z tag" \
-  bash -c "scripts/resolve-agent-version latest | grep -qE '^v[0-9]+\\.[0-9]+\\.[0-9]+$'"
+check "'latest' resolves to a semver tag" \
+  bash -c "scripts/resolve-agent-version latest | grep -qE '^v[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.]+)?$'"
+check "'latest' is an existing tag in the agent repo" \
+  bash -c "git -c protocol.version=1 ls-remote --tags --refs https://github.com/semaphoreci/agent.git | grep -q \"refs/tags/\$(scripts/resolve-agent-version latest)\$\""
 check "empty version means latest" \
   bash -c "[ \"\$(scripts/resolve-agent-version '')\" = \"\$(scripts/resolve-agent-version latest)\" ]"
-check "'latest' has a published release (checksums downloadable)" \
-  bash -c "curl -sSLI -f -o /dev/null https://github.com/semaphoreci/agent/releases/download/\$(scripts/resolve-agent-version latest)/agent_checksums.txt"
-check "fails when the repo has no stable tags" \
-  bash -c "! AGENT_REPO=https://github.com/semaphoreci/toolbox-does-not-exist scripts/resolve-agent-version latest 2>/dev/null"
+check "latest: stable beats its own pre-release (v2.5.0 > v2.5.0-rc.1)" \
+  bash -c "[ \"\$(AGENT_TAGS=\$'v2.4.0\\nv2.5.0-rc.1\\nv2.5.0' scripts/resolve-agent-version latest)\" = v2.5.0 ]"
+check "latest: pre-release beats older stable (v2.5.0-rc.1 > v2.4.0)" \
+  bash -c "[ \"\$(AGENT_TAGS=\$'v2.5.0-rc.1\\nv2.4.0\\nv2.3.3' scripts/resolve-agent-version latest)\" = v2.5.0-rc.1 ]"
+check "latest: numeric sort, not lexical (v2.10.0 > v2.9.0)" \
+  bash -c "[ \"\$(AGENT_TAGS=\$'v2.9.0\\nv2.10.0\\nv2.5.0' scripts/resolve-agent-version latest)\" = v2.10.0 ]"
+check "latest: ignores non-version tags" \
+  bash -c "[ \"\$(AGENT_TAGS=\$'v2.4.0\\nnightly\\nfoo-v9.9.9' scripts/resolve-agent-version latest)\" = v2.4.0 ]"
+check "fails when the repo has no version tags" \
+  bash -c "! AGENT_TAGS='' scripts/resolve-agent-version latest 2>/dev/null"
 
 echo "# build"
 docker build -q -t "$IMAGE" . >/dev/null
 ok "image builds (AGENT_VERSION default = latest)"
 
 echo "# agent version selection"
-check "default build installs latest stable ($EXPECTED_AGENT_VERSION)" \
+check "default build installs latest tag ($EXPECTED_AGENT_VERSION)" \
   bash -c "run agent version | grep -qx '$EXPECTED_AGENT_VERSION'"
 
 check "--build-arg AGENT_VERSION=$PINNED_AGENT_VERSION installs that version" \
   bash -c "docker build -q -t '$IMAGE-pinned' --build-arg AGENT_VERSION='$PINNED_AGENT_VERSION' . >/dev/null \
            && docker run --rm '$IMAGE-pinned' agent version | grep -qx '$PINNED_AGENT_VERSION'"
 
-check "build fails for a version that has no release" \
+check "build fails for a tag that does not exist" \
   bash -c "! docker build -q -t '$IMAGE-bogus' --build-arg AGENT_VERSION=v0.0.0-does-not-exist . >/dev/null 2>&1"
 
 echo "# agent binary"

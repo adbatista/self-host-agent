@@ -4,14 +4,35 @@
 # (see .env.example): SEMAPHORE_AGENT_ENDPOINT, SEMAPHORE_AGENT_TOKEN, ...
 #
 # Build args:
-#   AGENT_VERSION   agent release tag (e.g. v2.4.0, v2.5.0-rc.1). Default "latest"
-#                   = newest stable vX.Y.Z release, resolved at build time by
-#                   scripts/resolve-agent-version.
+#   AGENT_VERSION   agent git tag (e.g. v2.4.0, v2.5.0-rc.1). Default "latest" =
+#                   newest tag by semver (pre-releases included), resolved at
+#                   build time by scripts/resolve-agent-version. The agent is
+#                   built from source at that tag, so any tag works even before
+#                   a GitHub release with binaries exists.
 #   TOOLBOX_VERSION toolbox release tag.
-FROM ubuntu:24.04
-
 ARG AGENT_VERSION=latest
 ARG TOOLBOX_VERSION=v1.44.0
+
+# --- Build the agent from source at the requested tag -------------------------
+FROM --platform=$BUILDPLATFORM golang:1.25-bookworm AS agent-builder
+ARG AGENT_VERSION
+ARG TARGETARCH
+COPY --chmod=0755 scripts/resolve-agent-version /usr/local/bin/resolve-agent-version
+WORKDIR /src
+# "latest" is resolved in this layer; rebuild with --no-cache to pick up a new tag.
+# Source comes as the tag's tarball: no git auth involved, and an unknown tag is a
+# hard 404 instead of a credential prompt.
+RUN version="$(resolve-agent-version "$AGENT_VERSION")" \
+ && echo "building semaphore agent ${version} for linux/${TARGETARCH}" \
+ && curl -fsSL "https://github.com/semaphoreci/agent/archive/refs/tags/${version}.tar.gz" \
+      | tar -xz --strip-components=1 \
+ && CGO_ENABLED=0 GOOS=linux GOARCH="$TARGETARCH" \
+      go build -trimpath -ldflags="-s -w -X main.VERSION=${version}" -o /out/agent main.go
+
+# --- Runtime image -------------------------------------------------------------
+FROM ubuntu:24.04
+
+ARG TOOLBOX_VERSION
 ARG TARGETARCH
 
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -47,24 +68,10 @@ RUN userdel -r ubuntu \
 COPY --chown=semaphore:semaphore --chmod=0644 ssh/known_hosts /home/semaphore/.ssh/known_hosts
 RUN chmod 0700 /home/semaphore/.ssh && chown semaphore:semaphore /home/semaphore/.ssh
 
-# Agent binary, checksum-verified against the release manifest. AGENT_VERSION
-# "latest" is resolved here, so rebuild with --no-cache to pick up a new release.
-COPY --chmod=0755 scripts/resolve-agent-version /usr/local/bin/resolve-agent-version
+# Agent binary from the builder stage.
 WORKDIR /opt/semaphore/agent
-RUN case "$TARGETARCH" in \
-      amd64) arch=x86_64 ;; \
-      arm64) arch=arm64 ;; \
-      *) echo "unsupported TARGETARCH: $TARGETARCH" >&2; exit 1 ;; \
-    esac \
- && version="$(resolve-agent-version "$AGENT_VERSION")" \
- && echo "installing semaphore agent ${version}" \
- && base="https://github.com/semaphoreci/agent/releases/download/${version}" \
- && curl -fsSL -o "agent_Linux_${arch}.tar.gz" "${base}/agent_Linux_${arch}.tar.gz" \
- && curl -fsSL -o agent_checksums.txt "${base}/agent_checksums.txt" \
- && sha256sum --check --ignore-missing --strict agent_checksums.txt \
- && tar -xzf "agent_Linux_${arch}.tar.gz" agent \
- && rm -f "agent_Linux_${arch}.tar.gz" agent_checksums.txt \
- && chown -R semaphore:semaphore /opt/semaphore
+COPY --from=agent-builder --chown=semaphore:semaphore /out/agent /opt/semaphore/agent/agent
+RUN chown -R semaphore:semaphore /opt/semaphore
 
 # Semaphore toolbox (cache, artifact, retry, test-results, checkout, sem-version ...).
 RUN case "$TARGETARCH" in \

@@ -4,7 +4,7 @@ Runs a [Semaphore CI self-hosted agent](https://docs.semaphore.io/using-semaphor
 inside a container instead of the `install.sh` + systemd flow.
 
 - Base: `ubuntu:24.04`
-- Agent: latest stable release by default, or any tag via `AGENT_VERSION`; sha256-verified
+- Agent: built from source at the newest git tag by default, or any tag via `AGENT_VERSION`
 - Toolbox: `v1.44.0` (`ARG TOOLBOX_VERSION`) - `cache`, `artifact`, `retry`, `test-results`, `checkout`
 - Jobs run as non-root `semaphore` (uid 1000) with passwordless sudo
 - SSH host keys for github.com, gitlab.com and bitbucket.org pinned in `ssh/known_hosts`
@@ -33,19 +33,21 @@ See `.env.example` and the [config reference](https://docs.semaphore.io/referenc
 
 ### Agent version
 
-`AGENT_VERSION` (build arg, default `latest`) picks the
-[agent release](https://github.com/semaphoreci/agent/releases) baked into the image.
+`AGENT_VERSION` (build arg, default `latest`) is the
+[agent git tag](https://github.com/semaphoreci/agent/tags) compiled into the image.
+The agent is built from source in a `golang` stage, so any tag works, including ones
+that have no GitHub release binaries yet.
 
 ```sh
-docker compose build                                  # latest stable vX.Y.Z release
-AGENT_VERSION=v2.4.0 docker compose build             # pin a release
-AGENT_VERSION=v2.5.0-rc.1 docker compose build        # pre-releases must be named explicitly
+docker compose build                                  # newest tag by semver (rc included)
+AGENT_VERSION=v2.4.0 docker compose build             # pin a tag
+AGENT_VERSION=v2.5.0-rc.1 docker compose build        # pre-release tag
 docker build --build-arg AGENT_VERSION=v2.4.0 .       # without compose
 ```
 
 `AGENT_VERSION` can also live in `.env`. `latest` is resolved by
-`scripts/resolve-agent-version` when the layer is built, so run
-`docker compose build --no-cache` to move to a release published since the last build.
+`scripts/resolve-agent-version` when the builder layer runs, so use
+`docker compose build --no-cache` to move to a tag pushed since the last build.
 Check what an image has with `docker compose run --rm agent agent version`.
 
 ## Tests
