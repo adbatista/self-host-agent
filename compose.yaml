@@ -1,0 +1,9 @@
+services:
+  agent:
+    build: .
+    image: semaphore-agent:local
+    env_file: .env
+    restart: unless-stopped
+    init: true
+    # Let a running job finish before the container is killed on `compose down`/`stop`.
+    stop_grace_period: 2m
