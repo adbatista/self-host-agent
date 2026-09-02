@@ -4,7 +4,7 @@ Runs a [Semaphore CI self-hosted agent](https://docs.semaphore.io/using-semaphor
 inside a container instead of the `install.sh` + systemd flow.
 
 - Base: `ubuntu:24.04`
-- Agent: `v2.4.0` (`ARG AGENT_VERSION`), sha256-verified
+- Agent: latest stable release by default, or any tag via `AGENT_VERSION`; sha256-verified
 - Toolbox: `v1.44.0` (`ARG TOOLBOX_VERSION`) - `cache`, `artifact`, `retry`, `test-results`, `checkout`
 - Jobs run as non-root `semaphore` (uid 1000) with passwordless sudo
 - SSH host keys for github.com, gitlab.com and bitbucket.org pinned in `ssh/known_hosts`
@@ -30,6 +30,23 @@ docker compose up -d --scale agent=3   # more agents; leave SEMAPHORE_AGENT_NAME
 
 All agent settings are environment variables (`SEMAPHORE_AGENT_*`) read from `.env`.
 See `.env.example` and the [config reference](https://docs.semaphore.io/reference/self-hosted-config).
+
+### Agent version
+
+`AGENT_VERSION` (build arg, default `latest`) picks the
+[agent release](https://github.com/semaphoreci/agent/releases) baked into the image.
+
+```sh
+docker compose build                                  # latest stable vX.Y.Z release
+AGENT_VERSION=v2.4.0 docker compose build             # pin a release
+AGENT_VERSION=v2.5.0-rc.1 docker compose build        # pre-releases must be named explicitly
+docker build --build-arg AGENT_VERSION=v2.4.0 .       # without compose
+```
+
+`AGENT_VERSION` can also live in `.env`. `latest` is resolved by
+`scripts/resolve-agent-version` when the layer is built, so run
+`docker compose build --no-cache` to move to a release published since the last build.
+Check what an image has with `docker compose run --rm agent agent version`.
 
 ## Tests
 

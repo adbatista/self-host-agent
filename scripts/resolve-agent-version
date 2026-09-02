@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# Resolve the Semaphore agent version to install.
+#
+# Usage: resolve-agent-version [VERSION]
+#
+#   VERSION empty or "latest"  -> newest stable release (vX.Y.Z, no -rc/-beta suffix)
+#                                 that actually has downloadable assets
+#   VERSION anything else      -> echoed back unchanged (e.g. v2.4.0, v2.5.0-rc.1)
+#
+# "latest" is resolved from git tags (no GitHub API rate limit) and confirmed by
+# probing the release's checksum file, because a tag can exist before (or
+# without) a published release.
+set -euo pipefail
+
+REPO="${AGENT_REPO:-https://github.com/semaphoreci/agent}"
+requested="${1:-latest}"
+
+if [ -n "$requested" ] && [ "$requested" != latest ]; then
+  printf '%s\n' "$requested"
+  exit 0
+fi
+
+tags="$(git ls-remote --tags --refs "${REPO}.git" \
+  | sed 's|.*refs/tags/||' \
+  | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+  | sort -rV)"
+
+if [ -z "$tags" ]; then
+  echo "resolve-agent-version: no stable tags found at ${REPO}" >&2
+  exit 1
+fi
+
+for tag in $tags; do
+  if curl -sSLI -f -o /dev/null "${REPO}/releases/download/${tag}/agent_checksums.txt" 2>/dev/null; then
+    printf '%s\n' "$tag"
+    exit 0
+  fi
+done
+
+echo "resolve-agent-version: no stable tag with a published release found at ${REPO}" >&2
+exit 1

@@ -10,7 +10,10 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 IMAGE="${IMAGE:-semaphore-agent:test}"
-EXPECTED_AGENT_VERSION="${EXPECTED_AGENT_VERSION:-v2.4.0}"
+# Default build installs "latest"; expect whatever the resolver says right now.
+EXPECTED_AGENT_VERSION="${EXPECTED_AGENT_VERSION:-$(scripts/resolve-agent-version latest)}"
+# An older stable release used to prove pinning works.
+PINNED_AGENT_VERSION="${PINNED_AGENT_VERSION:-v2.3.3}"
 
 pass=0
 fail=0
@@ -27,14 +30,36 @@ run() { docker run --rm "$IMAGE" "$@"; }
 export IMAGE
 export -f run
 
+echo "# resolve-agent-version"
+check "explicit version is returned unchanged" \
+  bash -c "[ \"\$(scripts/resolve-agent-version v2.3.3)\" = v2.3.3 ]"
+check "pre-release tag is accepted when named explicitly" \
+  bash -c "[ \"\$(scripts/resolve-agent-version v2.5.0-rc.1)\" = v2.5.0-rc.1 ]"
+check "'latest' resolves to a stable vX.Y.Z tag" \
+  bash -c "scripts/resolve-agent-version latest | grep -qE '^v[0-9]+\\.[0-9]+\\.[0-9]+$'"
+check "empty version means latest" \
+  bash -c "[ \"\$(scripts/resolve-agent-version '')\" = \"\$(scripts/resolve-agent-version latest)\" ]"
+check "'latest' has a published release (checksums downloadable)" \
+  bash -c "curl -sSLI -f -o /dev/null https://github.com/semaphoreci/agent/releases/download/\$(scripts/resolve-agent-version latest)/agent_checksums.txt"
+check "fails when the repo has no stable tags" \
+  bash -c "! AGENT_REPO=https://github.com/semaphoreci/toolbox-does-not-exist scripts/resolve-agent-version latest 2>/dev/null"
+
 echo "# build"
 docker build -q -t "$IMAGE" . >/dev/null
-ok "image builds"
+ok "image builds (AGENT_VERSION default = latest)"
 
-echo "# agent binary"
-check "agent version is $EXPECTED_AGENT_VERSION" \
+echo "# agent version selection"
+check "default build installs latest stable ($EXPECTED_AGENT_VERSION)" \
   bash -c "run agent version | grep -qx '$EXPECTED_AGENT_VERSION'"
 
+check "--build-arg AGENT_VERSION=$PINNED_AGENT_VERSION installs that version" \
+  bash -c "docker build -q -t '$IMAGE-pinned' --build-arg AGENT_VERSION='$PINNED_AGENT_VERSION' . >/dev/null \
+           && docker run --rm '$IMAGE-pinned' agent version | grep -qx '$PINNED_AGENT_VERSION'"
+
+check "build fails for a version that has no release" \
+  bash -c "! docker build -q -t '$IMAGE-bogus' --build-arg AGENT_VERSION=v0.0.0-does-not-exist . >/dev/null 2>&1"
+
+echo "# agent binary"
 check "agent start without config exits non-zero and mentions endpoint/token" \
   bash -c "! out=\$(run agent start 2>&1); echo \"\$out\" | grep -qiE 'endpoint|token'"
 
@@ -84,6 +109,13 @@ echo "# compose"
 tmp_env=0
 if [ ! -f .env ]; then cp .env.example .env; tmp_env=1; fi
 check "docker compose config is valid" docker compose config -q
+
+# Interpolate from .env.example (AGENT_VERSION commented out) so a pinned .env can't skew these.
+check "compose defaults AGENT_VERSION build arg to latest" \
+  bash -c "docker compose --env-file .env.example config 2>/dev/null | grep -qE '^\s*AGENT_VERSION: latest$'"
+
+check "compose passes AGENT_VERSION through as a build arg" \
+  bash -c "AGENT_VERSION=v2.3.3 docker compose --env-file .env.example config 2>/dev/null | grep -qE '^\s*AGENT_VERSION: v2\.3\.3$'"
 [ "$tmp_env" = 1 ] && rm -f .env
 
 if [ "${LIVE:-0}" = 1 ]; then

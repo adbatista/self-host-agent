@@ -2,9 +2,15 @@
 #
 # Configuration is read from environment variables at runtime
 # (see .env.example): SEMAPHORE_AGENT_ENDPOINT, SEMAPHORE_AGENT_TOKEN, ...
+#
+# Build args:
+#   AGENT_VERSION   agent release tag (e.g. v2.4.0, v2.5.0-rc.1). Default "latest"
+#                   = newest stable vX.Y.Z release, resolved at build time by
+#                   scripts/resolve-agent-version.
+#   TOOLBOX_VERSION toolbox release tag.
 FROM ubuntu:24.04
 
-ARG AGENT_VERSION=v2.4.0
+ARG AGENT_VERSION=latest
 ARG TOOLBOX_VERSION=v1.44.0
 ARG TARGETARCH
 
@@ -41,14 +47,18 @@ RUN userdel -r ubuntu \
 COPY --chown=semaphore:semaphore --chmod=0644 ssh/known_hosts /home/semaphore/.ssh/known_hosts
 RUN chmod 0700 /home/semaphore/.ssh && chown semaphore:semaphore /home/semaphore/.ssh
 
-# Agent binary, checksum-verified against the release manifest.
+# Agent binary, checksum-verified against the release manifest. AGENT_VERSION
+# "latest" is resolved here, so rebuild with --no-cache to pick up a new release.
+COPY --chmod=0755 scripts/resolve-agent-version /usr/local/bin/resolve-agent-version
 WORKDIR /opt/semaphore/agent
 RUN case "$TARGETARCH" in \
       amd64) arch=x86_64 ;; \
       arm64) arch=arm64 ;; \
       *) echo "unsupported TARGETARCH: $TARGETARCH" >&2; exit 1 ;; \
     esac \
- && base="https://github.com/semaphoreci/agent/releases/download/${AGENT_VERSION}" \
+ && version="$(resolve-agent-version "$AGENT_VERSION")" \
+ && echo "installing semaphore agent ${version}" \
+ && base="https://github.com/semaphoreci/agent/releases/download/${version}" \
  && curl -fsSL -o "agent_Linux_${arch}.tar.gz" "${base}/agent_Linux_${arch}.tar.gz" \
  && curl -fsSL -o agent_checksums.txt "${base}/agent_checksums.txt" \
  && sha256sum --check --ignore-missing --strict agent_checksums.txt \
