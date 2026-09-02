@@ -7,6 +7,8 @@ inside a container instead of the `install.sh` + systemd flow.
 - Agent: `v2.4.0` (`ARG AGENT_VERSION`), sha256-verified
 - Toolbox: `v1.44.0` (`ARG TOOLBOX_VERSION`) - `cache`, `artifact`, `retry`, `test-results`, `checkout`
 - Jobs run as non-root `semaphore` (uid 1000) with passwordless sudo
+- SSH host keys for github.com, gitlab.com and bitbucket.org pinned in `ssh/known_hosts`
+  (verify with `ssh-keygen -lf ssh/known_hosts`) so checkout never hangs on a host key prompt
 - arm64 and amd64
 
 ## Setup

@@ -64,6 +64,22 @@ for tool in git curl jq ssh; do
   check "'$tool' installed" run bash -c "command -v $tool >/dev/null"
 done
 
+echo "# ssh"
+for host in github.com gitlab.com bitbucket.org; do
+  check "known_hosts pins $host" \
+    run bash -c "ssh-keygen -F $host -f ~/.ssh/known_hosts | grep -q '^$host '"
+done
+
+check "known_hosts pins GitHub's published ED25519 key" \
+  run bash -c "ssh-keygen -lf ~/.ssh/known_hosts | grep -q 'SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU github.com (ED25519)'"
+
+check "~/.ssh owned by semaphore with 0700" \
+  run bash -c "[ \"\$(stat -c '%U %a' ~/.ssh)\" = 'semaphore 700' ]"
+
+# Without a key, ssh must get as far as auth (publickey denied) - never a host key prompt.
+check "ssh to github.com fails on auth, not on host key verification" \
+  run bash -c "out=\$(ssh -T -o BatchMode=yes git@github.com 2>&1); echo \"\$out\" | grep -q 'Permission denied (publickey)' && ! echo \"\$out\" | grep -qi 'host key'"
+
 echo "# compose"
 tmp_env=0
 if [ ! -f .env ]; then cp .env.example .env; tmp_env=1; fi

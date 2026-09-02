@@ -34,6 +34,13 @@ RUN userdel -r ubuntu \
  && echo 'semaphore ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/semaphore \
  && chmod 0440 /etc/sudoers.d/semaphore
 
+# Pinned SSH host keys for github.com / gitlab.com / bitbucket.org. Jobs have no
+# TTY, so an unknown host makes 'git clone' hang on the "continue connecting?"
+# prompt. Keys are pinned (not ssh-keyscan'd at build time) so a MITM during the
+# build cannot poison them; see ssh/known_hosts for how to re-verify.
+COPY --chown=semaphore:semaphore --chmod=0644 ssh/known_hosts /home/semaphore/.ssh/known_hosts
+RUN chmod 0700 /home/semaphore/.ssh && chown semaphore:semaphore /home/semaphore/.ssh
+
 # Agent binary, checksum-verified against the release manifest.
 WORKDIR /opt/semaphore/agent
 RUN case "$TARGETARCH" in \
