@@ -5,7 +5,7 @@
 #
 #   VERSION empty or "latest"  -> newest tag by semver, pre-releases included
 #                                 (v2.5.0 > v2.5.0-rc.1 > v2.4.0)
-#   VERSION anything else      -> echoed back unchanged (must be an existing tag)
+#   VERSION anything else      -> echoed back unchanged (tag, branch or commit SHA)
 #
 # Tags come from git ls-remote (no GitHub API rate limit). Protocol v1 is forced
 # because it needs only an anonymous GET of info/refs; the v2 POST to

@@ -4,7 +4,7 @@ Runs a [Semaphore CI self-hosted agent](https://docs.semaphore.io/using-semaphor
 inside a container instead of the `install.sh` + systemd flow.
 
 - Base: `ubuntu:24.04`
-- Agent: built from source at the newest git tag by default, or any tag via `AGENT_VERSION`
+- Agent: built from source at the newest git tag by default, or any tag/branch/SHA via `AGENT_VERSION`
 - Toolbox: `v1.44.0` (`ARG TOOLBOX_VERSION`) - `cache`, `artifact`, `retry`, `test-results`, `checkout`
 - Jobs run as non-root `semaphore` (uid 1000) with passwordless sudo
 - SSH host keys for github.com, gitlab.com and bitbucket.org pinned in `ssh/known_hosts`
@@ -33,21 +33,23 @@ See `.env.example` and the [config reference](https://docs.semaphore.io/referenc
 
 ### Agent version
 
-`AGENT_VERSION` (build arg, default `latest`) is the
-[agent git tag](https://github.com/semaphoreci/agent/tags) compiled into the image.
-The agent is built from source in a `golang` stage, so any tag works, including ones
-that have no GitHub release binaries yet.
+`AGENT_VERSION` (build arg, default `latest`) is the git ref of
+[semaphoreci/agent](https://github.com/semaphoreci/agent) compiled into the image:
+a tag, a branch or a commit SHA. The agent is built from source in a `golang` stage,
+so no GitHub release binaries are needed.
 
 ```sh
 docker compose build                                  # newest tag by semver (rc included)
-AGENT_VERSION=v2.4.0 docker compose build             # pin a tag
+AGENT_VERSION=v2.4.0 docker compose build             # tag
 AGENT_VERSION=v2.5.0-rc.1 docker compose build        # pre-release tag
+AGENT_VERSION=master docker compose build             # branch head
+AGENT_VERSION=03d1902 docker compose build            # commit SHA (short or full)
 docker build --build-arg AGENT_VERSION=v2.4.0 .       # without compose
 ```
 
-`AGENT_VERSION` can also live in `.env`. `latest` is resolved by
-`scripts/resolve-agent-version` when the builder layer runs, so use
-`docker compose build --no-cache` to move to a tag pushed since the last build.
+`AGENT_VERSION` can also live in `.env`. `agent version` reports the ref as given.
+`latest` and branch names are resolved when the builder layer runs, so use
+`docker compose build --no-cache` to pick up a new tag or new commits on a branch.
 Check what an image has with `docker compose run --rm agent agent version`.
 
 ## Tests

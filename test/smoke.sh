@@ -12,8 +12,11 @@ cd "$ROOT"
 IMAGE="${IMAGE:-semaphore-agent:test}"
 # Default build installs "latest"; expect whatever the resolver says right now.
 EXPECTED_AGENT_VERSION="${EXPECTED_AGENT_VERSION:-$(scripts/resolve-agent-version latest)}"
-# A tag that differs from latest, used to prove pinning works (pre-release on purpose).
+# Refs that differ from latest, used to prove pinning works: a pre-release tag,
+# a commit SHA and a branch.
 PINNED_AGENT_VERSION="${PINNED_AGENT_VERSION:-v2.5.0-rc.1}"
+PINNED_AGENT_SHA="${PINNED_AGENT_SHA:-03d1902}"
+PINNED_AGENT_BRANCH="${PINNED_AGENT_BRANCH:-master}"
 
 pass=0
 fail=0
@@ -64,7 +67,15 @@ check "--build-arg AGENT_VERSION=$PINNED_AGENT_VERSION installs that version" \
   bash -c "docker build -q -t '$IMAGE-pinned' --build-arg AGENT_VERSION='$PINNED_AGENT_VERSION' . >/dev/null \
            && docker run --rm '$IMAGE-pinned' agent version | grep -qx '$PINNED_AGENT_VERSION'"
 
-check "build fails for a tag that does not exist" \
+check "--build-arg AGENT_VERSION=$PINNED_AGENT_SHA (commit) builds and reports that ref" \
+  bash -c "docker build -q -t '$IMAGE-sha' --build-arg AGENT_VERSION='$PINNED_AGENT_SHA' . >/dev/null \
+           && docker run --rm '$IMAGE-sha' agent version | grep -qx '$PINNED_AGENT_SHA'"
+
+check "--build-arg AGENT_VERSION=$PINNED_AGENT_BRANCH (branch) builds and reports that ref" \
+  bash -c "docker build -q -t '$IMAGE-branch' --build-arg AGENT_VERSION='$PINNED_AGENT_BRANCH' . >/dev/null \
+           && docker run --rm '$IMAGE-branch' agent version | grep -qx '$PINNED_AGENT_BRANCH'"
+
+check "build fails for a ref that does not exist" \
   bash -c "! docker build -q -t '$IMAGE-bogus' --build-arg AGENT_VERSION=v0.0.0-does-not-exist . >/dev/null 2>&1"
 
 echo "# agent binary"

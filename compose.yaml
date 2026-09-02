@@ -3,7 +3,7 @@ services:
     build:
       context: .
       args:
-        # Agent git tag; "latest" = newest tag (rc included) at build time.
+        # Agent git ref (tag, branch or SHA); "latest" = newest tag (rc included).
         # Override: AGENT_VERSION=v2.4.0 docker compose build  (or set it in .env)
         AGENT_VERSION: ${AGENT_VERSION:-latest}
     image: semaphore-agent:local

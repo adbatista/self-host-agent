@@ -4,11 +4,11 @@
 # (see .env.example): SEMAPHORE_AGENT_ENDPOINT, SEMAPHORE_AGENT_TOKEN, ...
 #
 # Build args:
-#   AGENT_VERSION   agent git tag (e.g. v2.4.0, v2.5.0-rc.1). Default "latest" =
-#                   newest tag by semver (pre-releases included), resolved at
-#                   build time by scripts/resolve-agent-version. The agent is
-#                   built from source at that tag, so any tag works even before
-#                   a GitHub release with binaries exists.
+#   AGENT_VERSION   any git ref of semaphoreci/agent: tag (v2.4.0, v2.5.0-rc.1),
+#                   branch (master) or commit SHA. Default "latest" = newest tag
+#                   by semver (pre-releases included), resolved at build time by
+#                   scripts/resolve-agent-version. The agent is built from
+#                   source at that ref, so no GitHub release is required.
 #   TOOLBOX_VERSION toolbox release tag.
 ARG AGENT_VERSION=latest
 ARG TOOLBOX_VERSION=v1.44.0
@@ -20,11 +20,11 @@ ARG TARGETARCH
 COPY --chmod=0755 scripts/resolve-agent-version /usr/local/bin/resolve-agent-version
 WORKDIR /src
 # "latest" is resolved in this layer; rebuild with --no-cache to pick up a new tag.
-# Source comes as the tag's tarball: no git auth involved, and an unknown tag is a
-# hard 404 instead of a credential prompt.
+# Source comes as the ref's tarball (GitHub resolves tag, branch or SHA): no git
+# auth involved, and an unknown ref is a hard 404 instead of a credential prompt.
 RUN version="$(resolve-agent-version "$AGENT_VERSION")" \
  && echo "building semaphore agent ${version} for linux/${TARGETARCH}" \
- && curl -fsSL "https://github.com/semaphoreci/agent/archive/refs/tags/${version}.tar.gz" \
+ && curl -fsSL "https://github.com/semaphoreci/agent/archive/${version}.tar.gz" \
       | tar -xz --strip-components=1 \
  && CGO_ENABLED=0 GOOS=linux GOARCH="$TARGETARCH" \
       go build -trimpath -ldflags="-s -w -X main.VERSION=${version}" -o /out/agent main.go
