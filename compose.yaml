@@ -6,6 +6,9 @@ services:
         # Agent git ref (tag, branch or SHA); "latest" = newest tag (rc included).
         # Override: AGENT_VERSION=v2.4.0 docker compose build  (or set it in .env)
         AGENT_VERSION: ${AGENT_VERSION:-latest}
+        # Agent binary origin: "source" (compile the ref) or "release" (prebuilt
+        # GitHub release asset, tags only).
+        AGENT_SOURCE: ${AGENT_SOURCE:-source}
     image: semaphore-agent:local
     env_file: .env
     restart: unless-stopped
