@@ -4,7 +4,8 @@ Runs a [Semaphore CI self-hosted agent](https://docs.semaphore.io/using-semaphor
 inside a container instead of the `install.sh` + systemd flow.
 
 - Base: `ubuntu:24.04`
-- Agent: built from source at the newest git tag by default, or any tag/branch/SHA via `AGENT_VERSION`
+- Agent: built from source at the newest git tag by default, or any tag/branch/SHA via `AGENT_VERSION`;
+  `AGENT_SOURCE=release` downloads the prebuilt GitHub release binary instead
 - Toolbox: `v1.44.0` (`ARG TOOLBOX_VERSION`) - `cache`, `artifact`, `retry`, `test-results`, `checkout`
 - Jobs run as non-root `semaphore` (uid 1000) with passwordless sudo
 - SSH host keys for github.com, gitlab.com and bitbucket.org pinned in `ssh/known_hosts`
@@ -51,6 +52,26 @@ docker build --build-arg AGENT_VERSION=v2.4.0 .       # without compose
 `latest` and branch names are resolved when the builder layer runs, so use
 `docker compose build --no-cache` to pick up a new tag or new commits on a branch.
 Check what an image has with `docker compose run --rm agent agent version`.
+
+### Agent source: compile or download
+
+`AGENT_SOURCE` (build arg, default `source`) picks where the binary comes from:
+
+| value     | what happens                                                                                  | works with            |
+|-----------|-----------------------------------------------------------------------------------------------|-----------------------|
+| `source`  | `go build` of the ref in a `golang` stage                                                     | tag, branch, SHA      |
+| `release` | download `agent_Linux_<arch>.tar.gz` from the GitHub release of the tag, verify its sha256    | tags only (incl. rc)  |
+
+```sh
+AGENT_SOURCE=release docker compose build                       # latest tag, prebuilt binary
+AGENT_SOURCE=release AGENT_VERSION=v2.4.0 docker compose build  # pinned tag, prebuilt binary
+docker build --build-arg AGENT_SOURCE=release .                 # without compose
+```
+
+`release` skips the Go toolchain entirely, so it is faster and yields the exact
+binary Semaphore ships. A branch or SHA has no release and fails the build with
+a 404; there is no silent fallback to compiling. Any other `AGENT_SOURCE` value
+fails at the `FROM agent-${AGENT_SOURCE}` line.
 
 ## Tests
 
