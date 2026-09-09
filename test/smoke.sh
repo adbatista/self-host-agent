@@ -78,6 +78,21 @@ check "--build-arg AGENT_VERSION=$PINNED_AGENT_BRANCH (branch) builds and report
 check "build fails for a ref that does not exist" \
   bash -c "! docker build -q -t '$IMAGE-bogus' --build-arg AGENT_VERSION=v0.0.0-does-not-exist . >/dev/null 2>&1"
 
+echo "# agent source selection (AGENT_SOURCE=source|release)"
+check "--build-arg AGENT_SOURCE=release installs the release binary for $PINNED_AGENT_VERSION" \
+  bash -c "docker build -q -t '$IMAGE-release' --build-arg AGENT_SOURCE=release --build-arg AGENT_VERSION='$PINNED_AGENT_VERSION' . >/dev/null \
+           && docker run --rm '$IMAGE-release' agent version | grep -qx '$PINNED_AGENT_VERSION'"
+
+check "AGENT_SOURCE=release with default AGENT_VERSION installs latest release ($EXPECTED_AGENT_VERSION)" \
+  bash -c "docker build -q -t '$IMAGE-release-latest' --build-arg AGENT_SOURCE=release . >/dev/null \
+           && docker run --rm '$IMAGE-release-latest' agent version | grep -qx '$EXPECTED_AGENT_VERSION'"
+
+check "AGENT_SOURCE=release fails for a branch ref (no release for $PINNED_AGENT_BRANCH)" \
+  bash -c "! docker build -q -t '$IMAGE-release-branch' --build-arg AGENT_SOURCE=release --build-arg AGENT_VERSION='$PINNED_AGENT_BRANCH' . >/dev/null 2>&1"
+
+check "build fails for an unknown AGENT_SOURCE" \
+  bash -c "! docker build -q -t '$IMAGE-badsource' --build-arg AGENT_SOURCE=tarball . >/dev/null 2>&1"
+
 echo "# agent binary"
 check "agent start without config exits non-zero and mentions endpoint/token" \
   bash -c "! out=\$(run agent start 2>&1); echo \"\$out\" | grep -qiE 'endpoint|token'"
@@ -135,6 +150,12 @@ check "compose defaults AGENT_VERSION build arg to latest" \
 
 check "compose passes AGENT_VERSION through as a build arg" \
   bash -c "AGENT_VERSION=v2.3.3 docker compose --env-file .env.example config 2>/dev/null | grep -qE '^\s*AGENT_VERSION: v2\.3\.3$'"
+
+check "compose defaults AGENT_SOURCE build arg to source" \
+  bash -c "docker compose --env-file .env.example config 2>/dev/null | grep -qE '^\s*AGENT_SOURCE: source$'"
+
+check "compose passes AGENT_SOURCE through as a build arg" \
+  bash -c "AGENT_SOURCE=release docker compose --env-file .env.example config 2>/dev/null | grep -qE '^\s*AGENT_SOURCE: release$'"
 [ "$tmp_env" = 1 ] && rm -f .env
 
 if [ "${LIVE:-0}" = 1 ]; then
