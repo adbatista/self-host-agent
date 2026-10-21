@@ -29,8 +29,26 @@ docker compose up -d --scale agent=3   # more agents; leave SEMAPHORE_AGENT_NAME
 
 ## Configuration
 
-All agent settings are environment variables (`SEMAPHORE_AGENT_*`) read from `.env`.
+All agent settings are environment variables (`SEMAPHORE_AGENT_*`). Compose resolves them
+from `./.env` by default, or from the file given with `--env-file`, with the shell winning
+over both. Only variables that are set reach the container; unset ones stay unset.
 See `.env.example` and the [config reference](https://docs.semaphore.io/reference/self-hosted-config).
+
+`compose.yaml` lists the variables it passes through under `environment:`. To use a
+`SEMAPHORE_AGENT_*` setting that is not listed there yet, add its name to that list.
+
+### Several agents from one checkout
+
+Keep one env file per agent and give each its own project name:
+
+```sh
+docker compose -p agent-a --env-file .env.agent-a up -d
+docker compose -p agent-b --env-file .env.agent-b up -d
+docker compose -p agent-a --env-file .env.agent-a down
+```
+
+`--env-file` is also where `${AGENT_VERSION}` and `${AGENT_SOURCE}` are read from, so each
+agent can pin its own build.
 
 ### Agent version
 
