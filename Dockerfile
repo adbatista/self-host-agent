@@ -19,7 +19,7 @@ ARG AGENT_SOURCE=source
 ARG TOOLBOX_VERSION=v1.44.0
 
 # --- Build the agent from source at the requested ref -------------------------
-FROM --platform=$BUILDPLATFORM golang:1.25-bookworm AS agent-source
+FROM --platform=$BUILDPLATFORM golang:1.26-bookworm AS agent-source
 ARG AGENT_VERSION
 ARG TARGETARCH
 COPY --chmod=0755 scripts/resolve-agent-version /usr/local/bin/resolve-agent-version
