@@ -156,6 +156,34 @@ check "compose defaults AGENT_SOURCE build arg to source" \
 
 check "compose passes AGENT_SOURCE through as a build arg" \
   bash -c "AGENT_SOURCE=release docker compose --env-file .env.example config 2>/dev/null | grep -qE '^\s*AGENT_SOURCE: release$'"
+echo "# compose: agent env pass-through"
+alt_env="$(mktemp)"
+printf 'SEMAPHORE_AGENT_ENDPOINT=alt.semaphoreci.com\nSEMAPHORE_AGENT_TOKEN=alt-token\nSEMAPHORE_AGENT_NAME=alt-agent-name\n' > "$alt_env"
+
+check "--env-file <other> sets SEMAPHORE_AGENT_ENDPOINT in the container env" \
+  bash -c "docker compose --env-file '$alt_env' config 2>/dev/null | grep -qE '^\s*SEMAPHORE_AGENT_ENDPOINT: alt\.semaphoreci\.com$'"
+
+check "--env-file <other> sets SEMAPHORE_AGENT_TOKEN in the container env" \
+  bash -c "docker compose --env-file '$alt_env' config 2>/dev/null | grep -qE '^\s*SEMAPHORE_AGENT_TOKEN: alt-token$'"
+
+check "--env-file <other> sets optional SEMAPHORE_AGENT_NAME when present" \
+  bash -c "docker compose --env-file '$alt_env' config 2>/dev/null | grep -qE '^\s*SEMAPHORE_AGENT_NAME: alt-agent-name$'"
+
+check "optional var absent from env file is not set to an empty value" \
+  bash -c "! docker compose --env-file '$alt_env' config 2>/dev/null | grep -qE '^\s*SEMAPHORE_AGENT_UPLOAD_JOB_LOGS: *(\"\")?$'"
+
+check "shell env overrides the env file (SEMAPHORE_AGENT_ENDPOINT)" \
+  bash -c "SEMAPHORE_AGENT_ENDPOINT=shell.semaphoreci.com docker compose --env-file '$alt_env' config 2>/dev/null | grep -qE '^\s*SEMAPHORE_AGENT_ENDPOINT: shell\.semaphoreci\.com$'"
+
+proj_dir="$(mktemp -d)"
+cp .env.example "$proj_dir/.env"
+check "default ./.env (no --env-file) still feeds the container env" \
+  bash -c "docker compose -f compose.yaml --project-directory '$proj_dir' config 2>/dev/null | grep -qE '^\s*SEMAPHORE_AGENT_ENDPOINT: adias\.semaphoreci\.com$'"
+rm -rf "$proj_dir"
+
+check "compose does not hardcode env_file: .env" \
+  bash -c "! grep -qE '^\s*env_file:' compose.yaml"
+rm -f "$alt_env"
 [ "$tmp_env" = 1 ] && rm -f .env
 
 if [ "${LIVE:-0}" = 1 ]; then

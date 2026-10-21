@@ -10,7 +10,22 @@ services:
         # GitHub release asset, tags only).
         AGENT_SOURCE: ${AGENT_SOURCE:-source}
     image: semaphore-agent:local
-    env_file: .env
+    # Resolved from ./.env by default, from `--env-file <file>` or the shell when
+    # given, so one checkout can run several agents: `docker compose -p a --env-file .env.a up`.
+    environment:
+      - SEMAPHORE_AGENT_ENDPOINT
+      - SEMAPHORE_AGENT_TOKEN
+      - SEMAPHORE_AGENT_NAME
+      - SEMAPHORE_AGENT_DISCONNECT_AFTER_JOB
+      - SEMAPHORE_AGENT_DISCONNECT_AFTER_IDLE_TIMEOUT
+      - SEMAPHORE_AGENT_UPLOAD_JOB_LOGS
+      - SEMAPHORE_AGENT_INTERRUPTION_GRACE_PERIOD
+      - SEMAPHORE_AGENT_SHUTDOWN_HOOK_PATH
+      - SEMAPHORE_AGENT_PRE_JOB_HOOK_PATH
+      - SEMAPHORE_AGENT_FAIL_ON_PRE_JOB_HOOK_ERROR
+      - SEMAPHORE_AGENT_ENV_VARS
+      - SEMAPHORE_AGENT_FILES
+      - SEMAPHORE_AGENT_FAIL_ON_MISSING_FILES
     restart: unless-stopped
     init: true
     # Let a running job finish before the container is killed on `compose down`/`stop`.
