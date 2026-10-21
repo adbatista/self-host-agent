@@ -4,7 +4,8 @@ Runs a [Semaphore CI self-hosted agent](https://docs.semaphore.io/using-semaphor
 inside a container instead of the `install.sh` + systemd flow.
 
 - Base: `ubuntu:24.04`
-- Agent: built from source at the newest git tag by default, or any tag/branch/SHA via `AGENT_VERSION`
+- Agent: built from source at the newest git tag by default, or any tag/branch/SHA via `AGENT_VERSION`;
+  `AGENT_SOURCE=release` downloads the prebuilt GitHub release binary instead
 - Toolbox: `v1.44.0` (`ARG TOOLBOX_VERSION`) - `cache`, `artifact`, `retry`, `test-results`, `checkout`
 - Jobs run as non-root `semaphore` (uid 1000) with passwordless sudo
 - SSH host keys for github.com, gitlab.com and bitbucket.org pinned in `ssh/known_hosts`
@@ -28,8 +29,26 @@ docker compose up -d --scale agent=3   # more agents; leave SEMAPHORE_AGENT_NAME
 
 ## Configuration
 
-All agent settings are environment variables (`SEMAPHORE_AGENT_*`) read from `.env`.
+All agent settings are environment variables (`SEMAPHORE_AGENT_*`). Compose resolves them
+from `./.env` by default, or from the file given with `--env-file`, with the shell winning
+over both. Only variables that are set reach the container; unset ones stay unset.
 See `.env.example` and the [config reference](https://docs.semaphore.io/reference/self-hosted-config).
+
+`compose.yaml` lists the variables it passes through under `environment:`. To use a
+`SEMAPHORE_AGENT_*` setting that is not listed there yet, add its name to that list.
+
+### Several agents from one checkout
+
+Keep one env file per agent and give each its own project name:
+
+```sh
+docker compose -p agent-a --env-file .env.agent-a up -d
+docker compose -p agent-b --env-file .env.agent-b up -d
+docker compose -p agent-a --env-file .env.agent-a down
+```
+
+`--env-file` is also where `${AGENT_VERSION}` and `${AGENT_SOURCE}` are read from, so each
+agent can pin its own build.
 
 ### Agent version
 
@@ -51,6 +70,26 @@ docker build --build-arg AGENT_VERSION=v2.4.0 .       # without compose
 `latest` and branch names are resolved when the builder layer runs, so use
 `docker compose build --no-cache` to pick up a new tag or new commits on a branch.
 Check what an image has with `docker compose run --rm agent agent version`.
+
+### Agent source: compile or download
+
+`AGENT_SOURCE` (build arg, default `source`) picks where the binary comes from:
+
+| value     | what happens                                                                                  | works with            |
+|-----------|-----------------------------------------------------------------------------------------------|-----------------------|
+| `source`  | `go build` of the ref in a `golang` stage                                                     | tag, branch, SHA      |
+| `release` | download `agent_Linux_<arch>.tar.gz` from the GitHub release of the tag, verify its sha256    | tags only (incl. rc)  |
+
+```sh
+AGENT_SOURCE=release docker compose build                       # latest tag, prebuilt binary
+AGENT_SOURCE=release AGENT_VERSION=v2.4.0 docker compose build  # pinned tag, prebuilt binary
+docker build --build-arg AGENT_SOURCE=release .                 # without compose
+```
+
+`release` skips the Go toolchain entirely, so it is faster and yields the exact
+binary Semaphore ships. A branch or SHA has no release and fails the build with
+a 404; there is no silent fallback to compiling. Any other `AGENT_SOURCE` value
+fails at the `FROM agent-${AGENT_SOURCE}` line.
 
 ## Tests
 

@@ -7,14 +7,19 @@
 #   AGENT_VERSION   any git ref of semaphoreci/agent: tag (v2.4.0, v2.5.0-rc.1),
 #                   branch (master) or commit SHA. Default "latest" = newest tag
 #                   by semver (pre-releases included), resolved at build time by
-#                   scripts/resolve-agent-version. The agent is built from
-#                   source at that ref, so no GitHub release is required.
+#                   scripts/resolve-agent-version.
+#   AGENT_SOURCE    where the agent binary comes from:
+#                     source  (default) compile the ref from source in a golang
+#                             stage; works for any ref, no GitHub release needed.
+#                     release download the prebuilt binary from the GitHub
+#                             release of that tag and verify its sha256; tags only.
 #   TOOLBOX_VERSION toolbox release tag.
 ARG AGENT_VERSION=latest
+ARG AGENT_SOURCE=source
 ARG TOOLBOX_VERSION=v1.44.0
 
-# --- Build the agent from source at the requested tag -------------------------
-FROM --platform=$BUILDPLATFORM golang:1.25-bookworm AS agent-builder
+# --- Build the agent from source at the requested ref -------------------------
+FROM --platform=$BUILDPLATFORM golang:1.26-bookworm AS agent-source
 ARG AGENT_VERSION
 ARG TARGETARCH
 COPY --chmod=0755 scripts/resolve-agent-version /usr/local/bin/resolve-agent-version
@@ -28,6 +33,31 @@ RUN version="$(resolve-agent-version "$AGENT_VERSION")" \
       | tar -xz --strip-components=1 \
  && CGO_ENABLED=0 GOOS=linux GOARCH="$TARGETARCH" \
       go build -trimpath -ldflags="-s -w -X main.VERSION=${version}" -o /out/agent main.go
+
+# --- Download the agent from the GitHub release of the requested tag ----------
+FROM --platform=$BUILDPLATFORM alpine:3.22 AS agent-release
+ARG AGENT_VERSION
+ARG TARGETARCH
+COPY --chmod=0755 scripts/resolve-agent-version /usr/local/bin/resolve-agent-version
+RUN apk add --no-cache bash curl git
+WORKDIR /src
+# Only tags have releases: a branch or SHA is a 404 here. The tarball is checked
+# against the release's agent_checksums.txt before the binary is extracted.
+RUN version="$(resolve-agent-version "$AGENT_VERSION")" \
+ && case "$TARGETARCH" in \
+      amd64) asset=agent_Linux_x86_64.tar.gz ;; \
+      arm64) asset=agent_Linux_arm64.tar.gz ;; \
+      *) echo "no agent release asset for linux/${TARGETARCH}" >&2; exit 1 ;; \
+    esac \
+ && echo "downloading semaphore agent ${version} release for linux/${TARGETARCH}" \
+ && base="https://github.com/semaphoreci/agent/releases/download/${version}" \
+ && curl -fsSL -o "$asset" "${base}/${asset}" \
+ && curl -fsSL -o agent_checksums.txt "${base}/agent_checksums.txt" \
+ && grep " ${asset}\$" agent_checksums.txt | sha256sum -c - \
+ && mkdir -p /out && tar -xzf "$asset" -C /out agent
+
+# Selected by AGENT_SOURCE; anything but source|release fails here.
+FROM agent-${AGENT_SOURCE} AS agent-builder
 
 # --- Runtime image -------------------------------------------------------------
 FROM ubuntu:24.04
